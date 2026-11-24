@@ -18,6 +18,7 @@ header{margin:0 2px 14px}h1{font-size:clamp(1.35rem,4.5vw,1.75rem);margin:0}h2{f
 .presets{display:flex;justify-content:flex-end;gap:6px;margin:0 0 8px}.presets button{font-size:.87rem;padding:5px 12px}.presets button[aria-pressed="true"]{color:var(--green);border-color:var(--green)}
 .field{display:flex;align-items:center;gap:5px;margin-top:4px;border:1px solid #546259;background:#111813;border-radius:8px;padding:8px 10px}
 .field:focus-within{border-color:var(--green)}input{width:100%;min-width:0;border:0;background:transparent;outline:none;color:var(--ink);font-size:1.18rem}
+.field .max-amount{flex:none;white-space:nowrap;color:var(--green);font-size:.82rem;padding:4px 7px}
 .field span{font-size:.82rem}.line{align-items:baseline;padding:3px 0}.line output{text-align:right;overflow-wrap:anywhere}
 button{border:1px solid #56645a;border-radius:8px;background:#29332b;color:var(--ink);padding:8px 12px;font:inherit;font-weight:600;cursor:pointer}
 button:disabled{opacity:.55;cursor:default}button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var(--green);outline-offset:2px}
@@ -40,7 +41,7 @@ footer{margin:12px 2px;font-size:.85rem}#account:empty{display:none}@media(max-w
 </section>
 <section class="order" aria-label="买入 熬鹰">
   <div class="fields">
-    <label>支付金额<div class="field"><input id="amount" inputmode="decimal" value="10000" autocomplete="off"><span>DAI</span></div></label>
+    <div><label for="amount">支付金额</label><div class="field"><input id="amount" inputmode="decimal" value="10000" autocomplete="off"><span>DAI</span><button type="button" id="maxAmount" class="max-amount" aria-label="填入最大 DAI 余额" disabled>最大</button></div></div>
     <label>滑点上限<div class="field"><input id="slip" type="number" min="5" max="99.99" step="0.01" inputmode="decimal" value="5" aria-describedby="slipError" autocomplete="off"><span>%</span></div></label>
   </div>
   <div class="presets" role="group" aria-label="快捷滑点">
@@ -396,6 +397,7 @@ function paintOrder(){
  $('account').textContent=account?account.slice(0,6)+'…'+account.slice(-4):'钱包未连接';
  $('connect').hidden=Boolean(account||pending||busy);
  $('action').hidden=!account&&!pending&&!busy;
+ $('maxAmount').disabled=!account||!funds||funds.balance===0n||busy||Boolean(pending);
  $('balance').textContent=funds?fmt(funds.balance):'—';$('allowance').textContent=funds?fmt(funds.allowance):'—';
  const gateOpen=Boolean(gateFresh()&&gate.enabled);
  for(const button of [$('action'),$('connect')])button.dataset.gate=gateOpen?'open':'';
@@ -575,6 +577,11 @@ const presets=document.querySelectorAll('button[data-slip]');
 for(const button of presets)button.onclick=()=>{
  $('slip').value=button.dataset.slip;
  resetSimulation();paintOrder();
+};
+$('maxAmount').onclick=()=>{
+ if($('maxAmount').disabled||!funds)return;
+ $('amount').value=fmt(funds.balance,18).replace(/,/g,'');
+ $('amount').dispatchEvent(new Event('input',{bubbles:true}));
 };
 for(const id of ['amount','slip','buyPrice','buyLimit'])$(id).addEventListener('input',()=>{resetSimulation();paintOrder()});
 try{const hash=sessionStorage.getItem('dlgns.pending');if(/^0x[0-9a-f]{64}$/i.test(hash||'')){pending=hash;const saved=sessionStorage.getItem('dlgns.price');if(saved&&/^\d+$/.test(saved))pendingPrice=BigInt(saved);showTx(hash)}}catch{}
