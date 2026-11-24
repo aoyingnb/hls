@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">
+<title>熬鹰资本</title>
+<link rel="preconnect" href="https://polygon-bor-rpc.blockreq.com" crossorigin>
+<link rel="preconnect" href="https://137.rpc.thirdweb.com" crossorigin>
+<style>
+:root{color-scheme:dark;--bg:#101614;--card:#18201c;--line:#38433c;--muted:#afbeb3;--ink:#eff6ee;--green:#c1fa79;--amber:#ffd18c;font:16px/1.5 Inter,"PingFang SC","Microsoft YaHei",sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}
+main{width:min(100% - 28px,580px);margin:clamp(12px,5vh,52px) auto 40px}
+header,.row,.line,.head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+header{margin:0 2px 14px}h1{font-size:clamp(1.35rem,4.5vw,1.75rem);margin:0}h2{font-size:1.75rem;line-height:1.2;margin:4px 0}p{margin:.4rem 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.signal,section.order,.more{padding:16px 20px}.signal{background:linear-gradient(110deg,#233226,#1b241e);border-bottom:1px solid var(--line)}
+.small,label,summary,.line{font-size:.9rem}.muted,label,.line span{color:var(--muted)}
+.waiting{color:var(--amber)}.open,a{color:var(--green)}.mono,output,input{font-variant-numeric:tabular-nums}
+.fields{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:12px;margin:0 0 10px}
+.presets{display:flex;justify-content:flex-end;gap:6px;margin:0 0 8px}.presets button{font-size:.87rem;padding:5px 12px}.presets button[aria-pressed="true"]{color:var(--green);border-color:var(--green)}
+.field{display:flex;align-items:center;gap:5px;margin-top:4px;border:1px solid #546259;background:#111813;border-radius:8px;padding:8px 10px}
+.field:focus-within{border-color:var(--green)}input{width:100%;min-width:0;border:0;background:transparent;outline:none;color:var(--ink);font-size:1.18rem}
+.field span{font-size:.82rem}.line{align-items:baseline;padding:3px 0}.line output{text-align:right;overflow-wrap:anywhere}
+button{border:1px solid #56645a;border-radius:8px;background:#29332b;color:var(--ink);padding:8px 12px;font:inherit;font-weight:600;cursor:pointer}
+button:disabled{opacity:.55;cursor:default}button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+.primary{width:100%;background:var(--green);border-color:var(--green);color:#172012;margin-top:12px;padding:11px}
+.primary[data-gate="open"]{outline:2px solid var(--amber);outline-offset:3px}
+.primary[data-mode="buy"]{background:var(--amber);border-color:var(--amber);color:#231b09}
+.subtle{font-size:.87rem}.more{border-top:1px solid var(--line);padding-block:12px}.more summary{cursor:pointer;color:var(--muted)}.more[open] summary{margin-bottom:12px}
+.more .fields{margin-top:12px}.notice{overflow-wrap:anywhere}.notice:empty,#receipt:empty{display:none}.records{list-style:none;padding:0;font-size:.85rem;color:var(--muted)}.records time{margin-right:8px}
+footer{margin:12px 2px;font-size:.85rem}#account:empty{display:none}@media(max-width:420px){.signal,section.order,.more{padding-inline:14px}}
+</style></head><body>
+<main>
+<header><h1>熬鹰资本</h1></header>
+<div class="card">
+<section class="signal">
+  <div class="head"><div><span class="small muted">开关每秒查询 · 储备和费用每 10 轮更新</span><h2 id="status" role="status">连接节点中</h2></div>
+  <button id="arm" class="subtle">开启声音</button></div>
+  <div id="pollTime" class="small muted">等待首次查询</div>
+  <div id="block" class="small muted">等待读取区块</div>
+  <p id="alertNote" class="small muted">点「开启声音」试听。跟单连响 4 轮，约 28 秒，请保持钱包在前台。</p>
+</section>
+<section class="order" aria-label="买入 熬鹰">
+  <div class="fields">
+    <label>支付金额<div class="field"><input id="amount" inputmode="decimal" value="10000" autocomplete="off"><span>DAI</span></div></label>
+    <label>滑点上限<div class="field"><input id="slip" type="number" min="5" max="99.99" step="0.01" inputmode="decimal" value="5" aria-describedby="slipError" autocomplete="off"><span>%</span></div></label>
+  </div>
+  <div class="presets" role="group" aria-label="快捷滑点">
+    <button type="button" data-slip="5" aria-pressed="true">5%</button>
+    <button type="button" data-slip="10" aria-pressed="false">10%</button>
+    <button type="button" data-slip="20" aria-pressed="false">20%</button>
+  </div>
+  <p id="slipError" class="notice small waiting" role="status"></p>
+  <div class="line"><span>按最近储备报价</span><output id="estimate">—</output></div>
+  <div class="line"><span>最低收到</span><output id="minimum">—</output></div>
+  <button class="primary" id="connect">连接钱包</button>
+  <button class="primary" id="action" aria-live="polite" hidden disabled>等待钱包</button>
+  <p class="notice small" id="feedback" role="status"></p><p id="receipt"></p>
+</section>
+<details class="more">
+  <summary>交易详情与 Gas 设置</summary>
+  <div class="line"><span>最近成功的监控 RPC</span><output id="monitorRpc">等待首次查询</output></div>
+  <p class="small muted">页面通过备用节点轮询 Polygon。授权和买入由连接的钱包签名并广播。</p>
+  <p class="small"><b>跟单权限钱包</b> · <a id="ownerTxs" href="https://polygonscan.com/txs?a=0x2f675f9de0b0349f2ea66d86dc20488cea9c5127" target="_blank" rel="noopener">查看钱包交易 ↗</a></p>
+  <p id="ownerAddress" class="small mono notice">0x2f675f9de0b0349f2ea66d86dc20488cea9c5127</p>
+  <p id="ownerBlock" class="small muted">上次核验于区块 97,885,528，等待读取最新权限。</p>
+  <p class="small muted">查看发往熬鹰主合约且已成功的 <code>setTradingEnabled(true)</code> 交易。开启声音后，查到交易开关开启就响铃。买入按钮按最近一次池内储备、余额和授权状态更新。</p>
+  <div id="account" class="mono small muted"></div>
+  <div class="line"><span>DAI 余额 / 已授权</span><output><b id="balance">—</b> / <b id="allowance">—</b></output></div>
+  <div class="fields">
+    <div><span class="small muted">授权 · 基础费 + 25 Gwei</span><div class="field"><output id="approvePrice">—</output><span>Gwei</span></div></div>
+    <label>买入 Gas Price<div class="field"><input id="buyPrice" inputmode="decimal" autocomplete="off"><span>Gwei</span></div></label>
+  </div>
+  <label>买入 Gas Limit<div class="field"><input id="buyLimit" inputmode="numeric" autocomplete="off"><span>Gas</span></div></label>
+  <p class="small muted">刷新或切换地址时随机取值，可手动修改。Gas Limit 为 599,852–617,053 的整数，Gas Price 为 1,986.218364–2,164.832608 Gwei。</p>
+  <div class="line"><span>买入手续费上限</span><output id="maxBuyFee">—</output></div>
+  <div class="line"><span>区块基础费</span><output id="baseFee">—</output></div>
+  <div class="line"><span>按当前基础费估算的买入小费</span><output id="buyTip">—</output></div>
+  <div class="line"><span>池内 DAI</span><output id="daiReserve">—</output></div>
+  <div class="line"><span>池内 熬鹰</span><output id="tokenReserve">—</output></div>
+  <div class="line"><span>代币买税 / 卖税</span><output id="tax">—</output></div>
+  <div class="line"><span>单笔上限 / 持仓上限</span><output><b id="maxTx">—</b> / <b id="maxWallet">—</b></output></div>
+  <p class="small muted">授权只覆盖填写的 DAI 金额。授权 Gas Limit 按估算值加 50%，至少 100,000。买入直接使用上方填写的 Gas Limit。</p>
+  <button class="subtle" id="simulate" disabled>模拟买入后卖出</button><p id="simulation" class="notice small" role="status">连接钱包并按金额授权后可模拟。</p>
+  <ul id="events" class="records" aria-label="状态记录"></ul>
+  <p class="small"><a href="https://polygonscan.com/address/0x796903426e3a112bdc2eb3021c41eba25440dbb7" target="_blank" rel="noopener">交易池</a> · <a href="https://polygonscan.com/address/0xb9Bd3711CE82CD8f04fA4277d41b544db29294F0" target="_blank" rel="noopener">熬鹰 合约</a></p>
+</details></div>
+<footer><a target="_blank" rel="noopener" href="https://quickswap.exchange/#/swap?chainId=137&amp;inputCurrency=0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063&amp;outputCurrency=0xb9Bd3711CE82CD8f04fA4277d41b544db29294F0">在 QuickSwap 打开</a></footer>
+</main>
+<script>
+'use strict';
+const TOKEN='0xb9bd3711ce82cd8f04fa4277d41b544db29294f0', DAI='0x8f3cf7ad23cd3cadbd9735aff958023239c6a063';
+const PAIR='0x796903426e3a112bdc2eb3021c41eba25440dbb7', ROUTER='0xa5e0829caced8ffdd4de3c43696c57f7d7a678ff';
+const FACTORY='0x5757371414417b8c6caad45baef941abc7d3ab32';
+const tenderlyMonitor='https://tenderly.rpc.polygon.community';
+const nodes=[
+ 'https://polygon-bor-rpc.blockreq.com/v1/rpc/public',
+ 'https://137.rpc.thirdweb.com',
+ 'https://polygon.drpc.org',
+ 'https://rpc.nodeflare.app/polygon/public',
+ tenderlyMonitor
+];
+const readingNodes=new Set();
+const $=id=>document.getElementById(id), unit=10n**18n;
+const word=value=>BigInt(value).toString(16).padStart(64,'0');
+const call=(to,data,block='latest')=>['eth_call',[{to,data},block]];
+const stamp=t=>new Date(t).toLocaleTimeString('zh-CN',{hour12:false});
+function record(msg){
+ const row=document.createElement('li'),time=document.createElement('time');
+ time.textContent=stamp(Date.now());row.append(time,msg);$('events').prepend(row);
+ while($('events').children.length>5)$('events').lastChild.remove();
+}
+function decimal(s,places){
+ if(!/^\d+(\.\d*)?$/.test(s)||s.length>75)return null;
+ const [whole,fraction='']=s.split('.');
+ if(fraction.length>places)return null;
+ const value=BigInt(whole)*10n**BigInt(places)+BigInt(fraction.padEnd(places,'0')||'0');
+ return value<2n**256n?value:null;
+}
+function fmt(n,digits=6){
+ const whole=(n/unit).toLocaleString('en-US'),frac=(n%unit).toString().padStart(18,'0').slice(0,digits).replace(/0+$/,'');
+ if(n>0n&&n<10n**BigInt(18-digits))return '< '+(digits?'0.'+'0'.repeat(digits-1)+'1':'1');
+ return whole+(frac?'.'+frac:'');
+}
+function validSlippage(bps){return bps!==null&&bps>=500n&&bps<10000n}
+function requestQuote(input,bps,s){
+ if(!input||!validSlippage(bps)||!s?.r0||!s.r1)return null;
+ const weighted=input*997n,out=weighted*s.r1/(s.r0*1000n+weighted);
+ const min=out*(10000n-bps)/10000n;
+ return min>0n?{input,out,min}:null;
+}
+function swapData(q,to,deadline,path=[DAI,TOKEN]){
+ return '0x5c11d795'+[q.input,q.min,160,to,deadline,2,...path].map(word).join('');
+}
+let nodeIndex=0,snap=null,gate=null;
+let detailsReply=0,detailsRequest=0;
+let pollCount=0,lastApplied=0,lastReply=0,nextFullPoll=1;
+let provider=null,account='',funds=null,epoch=0,busy=false,pending=null,armed=false,audio=null;
+let currentQuote=null,testing=false,pendingPrice=null;
+function gateFresh(){return gate&&Date.now()-lastReply<5000&&Math.abs(Date.now()-gate.ts)<20000}
+function detailsFresh(){return snap&&Date.now()-detailsReply<15000&&Math.abs(Date.now()-snap.ts)<20000}
+function fresh(){return gateFresh()&&detailsFresh()}
+function openSignal(){return fresh()&&gate.enabled&&snap.r0>0n&&snap.r1>0n}
+async function batch(url,requests){
+ const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(requests.map(([method,params],id)=>({jsonrpc:'2.0',id,method,params}))),signal:AbortSignal.timeout(3200),cache:'no-store'});
+ if(!res.ok)throw Error('节点 HTTP '+res.status);
+ const rows=await res.json();
+ return requests.map((_,i)=>{const row=Array.isArray(rows)&&rows.find(r=>r.id===i);if(!row||row.error||row.result===undefined)throw Error(row?.error?.message||'节点读取失败');return row.result});
+}
+function unpack(raw,count){
+ if(typeof raw!=='string'||raw.length!==2+64*count||!/^0x[0-9a-f]+$/i.test(raw))throw Error('无效合约返回值');
+ return raw.slice(2).match(/.{64}/g).map(v=>BigInt('0x'+v));
+}
+let activeTone=null;
+function stopTone(){
+ if(activeTone){activeTone.stop();activeTone=null}
+}
+function ping(rounds=1,groupsPerRound=1){
+ if(!audio||audio.state!=='running')return;
+ stopTone();
+ const osc=audio.createOscillator(),gain=audio.createGain();
+ const start=audio.currentTime,groupSpan=1.25,roundSpan=groupsPerRound*groupSpan+1;
+ const groups=rounds*groupsPerRound;
+ const end=start+(rounds-1)*roundSpan+(groupsPerRound-1)*groupSpan+.75;
+ osc.type='triangle';
+ gain.gain.value=0;
+ for(let i=0;i<groups;i++){
+  const groupStart=start+Math.floor(i/groupsPerRound)*roundSpan+(i%groupsPerRound)*groupSpan;
+  [880,1320,990,1480].forEach((hz,n)=>{
+   const t=groupStart+n*.19;
+   osc.frequency.setValueAtTime(hz,t);
+   gain.gain.setValueAtTime(0,t);
+   gain.gain.linearRampToValueAtTime(.42,t+.012);
+   gain.gain.setValueAtTime(.42,t+.115);
+   gain.gain.linearRampToValueAtTime(0,t+.16);
+  });
+ }
+ osc.connect(gain).connect(audio.destination);
+ activeTone=osc;
+ osc.onended=()=>{osc.disconnect();gain.disconnect();if(activeTone===osc)activeTone=null};
+ osc.start(start);osc.stop(end);
+}
+let alarmPlayed=false,notificationSent=false;
+function alertOpen(){
+ if(!armed)return;
+ if(!alarmPlayed&&audio?.state==='running'){alarmPlayed=true;ping(4,5)}
+ if(!notificationSent&&window.Notification?.permission==='granted'){
+  try{new Notification('熬鹰 跟单信号',{body:'熬鹰交易开关已开启，请查看页面上的买入按钮。',tag:'dlgns-open'});notificationSent=true}catch{}
+ }
+}
+const gwei=10n**9n;
+const hex=n=>'0x'+n.toString(16);
+function showGwei(n){return (n/gwei).toString()+((n%gwei)?'.'+(n%gwei).toString().padStart(9,'0').replace(/0+$/,''):'')}
+let gasAccount='',lastBuyGas=[];
+try{const saved=JSON.parse(sessionStorage.getItem('dlgns.lastBuyGas'));if(Array.isArray(saved))lastBuyGas=saved}catch{}
+function randomInteger(min,max,previous){
+ const exclude=Number.isInteger(previous)&&previous>=min&&previous<=max;
+ const value=min+Math.floor(Math.random()*(max-min+(exclude?0:1)));
+ return exclude&&value>=previous?value+1:value;
+}
+function randomizeBuyGas(){
+ const limit=randomInteger(599852,617053,lastBuyGas[0]);
+ const priceMicros=randomInteger(1986218364,2164832608,lastBuyGas[1]);
+ $('buyLimit').value=String(limit);
+ $('buyPrice').value=Math.floor(priceMicros/1000000)+'.'+String(priceMicros%1000000).padStart(6,'0');
+ lastBuyGas=[limit,priceMicros];
+ try{sessionStorage.setItem('dlgns.lastBuyGas',JSON.stringify(lastBuyGas))}catch{}
+}
+function useGasAccount(address){
+ if(typeof address!=='string'||!/^0x[0-9a-f]{40}$/i.test(address))return;
+ const next=address.toLowerCase();
+ if(gasAccount&&next!==gasAccount)randomizeBuyGas();
+ gasAccount=next;
+}
+function gasPrice(mode){
+ if(mode==='approve')return fresh()?snap.baseFee+25n*gwei:null;
+ return decimal($('buyPrice').value.trim(),9);
+}
+function buyGasLimit(){
+ const value=$('buyLimit').value.trim();
+ if(!/^\d{1,16}$/.test(value))return null;
+ const limit=BigInt(value);
+ if(limit<21000n||(snap&&limit>snap.blockGasLimit))return null;
+ return limit;
+}
+function paint(){
+ const ok=detailsFresh();
+ const title=!gateFresh()?'链上数据待确认':!gate.enabled?'等待跟单':!ok?'开关已开启，等待储备更新':openSignal()?'交易开关已开启':'开关已开启，等待双边流动性';
+ $('status').textContent=title;$('status').className=gateFresh()&&gate.enabled?'open':'waiting';
+ $('approvePrice').textContent=fresh()?showGwei(gasPrice('approve')):'—';
+ if(gate)$('block').textContent='开关 '+stamp(lastReply)+' · 区块 '+gate.height.toLocaleString('en-US')+
+  (snap?' · 储备和费用 '+stamp(detailsReply)+(ok?'':'（待更新）'):' · 储备和费用待读取');
+ if(snap){
+ const ownerLink=$('ownerTxs');
+ if(snap.owner){
+  ownerLink.href='https://polygonscan.com/txs?a='+snap.owner;
+  $('ownerAddress').textContent=snap.owner;
+ }else{
+  ownerLink.removeAttribute('href');
+  $('ownerAddress').textContent='owner() 为零地址，当前没有所有者钱包。';
+ }
+ ownerLink.hidden=!snap.owner;
+ $('ownerBlock').textContent=(ok?'权限核验区块 ':'上次核验区块 ')+snap.height.toLocaleString('en-US')+(ok?'':'，等待读取最新权限。');
+ $('baseFee').textContent=showGwei(snap.baseFee)+' Gwei';
+ $('tax').textContent=(Number(snap.buyFee)/100)+'% / '+(Number(snap.sellFee)/100)+'%';
+ for(const key of ['maxTx','maxWallet'])$(key).textContent=(snap[key]?fmt(snap[key])+' 熬鹰':'未启用')+(ok?'':'（上次）');
+ $('daiReserve').textContent=fmt(snap.r0,2);$('tokenReserve').textContent=fmt(snap.r1,2);
+ }
+ paintOrder();
+}
+// aggregate((address,bytes)[]) returns the block number and one bytes result per call.
+const multicall='0xca11bde05977b3631167028862be2a173976ca11';
+const monitorCalls=[
+ [multicall,'0x3408e470'], // chain ID
+ [multicall,'0x0f28c97d'], // block timestamp
+ [multicall,'0x86d516e8'], // block gas limit
+ [multicall,'0x27e86d6e'], // parent hash
+ [TOKEN,'0x4ada218b'],[PAIR,'0x0902f1ac'], // trading switch and reserves
+ [FACTORY,'0xe6a43905'+word(DAI)+word(TOKEN)],
+ [PAIR,'0x0dfe1681'],[PAIR,'0xd21220a7'],[TOKEN,'0x8da5cb5b'],
+ ...['0xf4364515','0x9731aa2e','0x8c0b5e22','0xaa4bde28'].map(selector=>[TOKEN,selector])
+];
+function encodeMonitorCalls(calls){
+ let offset=calls.length*32;
+ const offsets=[],tuples=[];
+ for(const [target,data] of calls){
+  const bytes=data.slice(2),length=bytes.length/2;
+  const tuple=word(target)+word(64)+word(length)+bytes.padEnd(Math.ceil(length/32)*64,'0');
+  offsets.push(word(offset));tuples.push(tuple);offset+=tuple.length/2;
+ }
+ return '0x252dba42'+word(32)+word(calls.length)+offsets.join('')+tuples.join('');
+}
+const monitorData=encodeMonitorCalls(monitorCalls);
+const gateData=encodeMonitorCalls([monitorCalls[0],monitorCalls[1],[TOKEN,'0x4ada218b']]);
+const monitorWidths=monitorCalls.map(([target,selector])=>target===PAIR&&selector==='0x0902f1ac'?3:1);
+function decodeAggregate(raw,widths){
+ const words=unpack(raw,3+2*widths.length+widths.reduce((total,n)=>total+n,0));
+ const [number,offset,count]=words;
+ if(offset!==64n||count!==BigInt(widths.length))throw Error('监控回包结构无效');
+ let cursor=3+widths.length;
+ const values=widths.flatMap((width,i)=>{
+  if(words[3+i]!==BigInt((cursor-3)*32)||words[cursor]!==BigInt(width*32))throw Error('监控回包长度无效');
+  const start=cursor+1;cursor=start+width;return words.slice(start,cursor);
+ });
+ return {number,values};
+}
+function gateState(number,chain,time,flag){
+ const height=Number(number),ts=Number(time)*1000;
+ if(chain!==137n||!Number.isSafeInteger(height)||!Number.isSafeInteger(ts)||Math.abs(Date.now()-ts)>20000)throw Error('链数据无效或节点落后');
+ if(flag>1n)throw Error('交易开关无效');
+ return {height,ts,enabled:flag===1n};
+}
+function decodeGate(raw){
+ const {number,values}=decodeAggregate(raw,[1,1,1]);
+ return gateState(number,...values);
+}
+async function readGate(url){
+ const [raw]=await batch(url,[call(multicall,gateData)]);
+ return decodeGate(raw);
+}
+function decodeMonitor(raw){
+ const {number,values}=decodeAggregate(raw,monitorWidths);
+ const [chain,time,blockGasLimit,parentHash,flag,r0,r1,,pair,token0,token1,ownerValue,buyFee,sellFee,maxTx,maxWallet]=values;
+ const state=gateState(number,chain,time,flag);
+ if(pair!==BigInt(PAIR)||token0!==BigInt(DAI)||token1!==BigInt(TOKEN))throw Error('交易池地址不匹配');
+ if(ownerValue>=(1n<<160n)||blockGasLimit===0n)throw Error('无效合约返回值');
+ const owner=ownerValue?'0x'+ownerValue.toString(16).padStart(40,'0'):null;
+ return {...state,owner,r0,r1,buyFee,sellFee,maxTx,maxWallet,parentHash,blockGasLimit};
+}
+async function readNode(url){
+ const [header,raw]=await batch(url,[['eth_getBlockByNumber',['latest',false]],call(multicall,monitorData)]);
+ if(!header?.hash||header.baseFeePerGas==null)throw Error('区块头无效');
+ const matchesHeader=s=>BigInt(s.height)===BigInt(header.number)&&s.parentHash===BigInt(header.parentHash)&&
+  s.ts===Number(BigInt(header.timestamp))*1000&&s.blockGasLimit===BigInt(header.gasLimit);
+ let snapshot=decodeMonitor(raw);
+ if(!matchesHeader(snapshot)){
+  // The head can advance between the two entries of a JSON-RPC batch.
+  const [pinned]=await batch(url,[call(multicall,monitorData,{blockHash:header.hash,requireCanonical:true})]);
+  snapshot=decodeMonitor(pinned);
+  if(!matchesHeader(snapshot))throw Error('区块不一致');
+ }
+ return {...snapshot,baseFee:BigInt(header.baseFeePerGas)};
+}
+function nextIdleNode(start){
+ for(let offset=0;offset<nodes.length;offset++){
+  const index=(start+offset)%nodes.length;
+  if(!readingNodes.has(index))return index;
+ }
+ return -1;
+}
+async function sampleNode(index,full,request,started){
+ readingNodes.add(index);
+ try{
+  const next=full?await readNode(nodes[index]):await readGate(nodes[index]);
+  if(Math.abs(Date.now()-next.ts)>20000)throw Error('节点落后');
+  if(full&&(!snap||next.height>snap.height||(next.height===snap.height&&request>detailsRequest))){
+   snap=next;detailsReply=Date.now();detailsRequest=request;
+  }
+  if(gate&&next.height<gate.height){
+   if(index===nodeIndex)nodeIndex=(index+1)%nodes.length;
+   return false;
+  }
+  if(!gate||next.height>gate.height||request>lastApplied){
+   const changed=gate?.enabled!==next.enabled;
+   gate=next;lastApplied=request;lastReply=Date.now();nodeIndex=index;
+   if(changed){
+    if(gate.enabled)alertOpen();else{alarmPlayed=false;notificationSent=false}
+    record(gate.enabled?'交易开关已开启':'交易开关关闭');
+   }
+   $('monitorRpc').textContent=new URL(nodes[index]).hostname+' · '+(full?'完整':'开关')+' '+Math.round(performance.now()-started)+' ms';
+  }
+  return true;
+ }catch{
+  if(request>lastApplied&&index===nodeIndex)nodeIndex=(index+1)%nodes.length;
+  return false;
+ }finally{readingNodes.delete(index);paint()}
+}
+async function poll(forceFull=false){
+ const index=nextIdleNode(nodeIndex);
+ if(index<0){paint();return}
+ const request=++pollCount,full=forceFull||request>=nextFullPoll,started=performance.now();
+ if(full)nextFullPoll=request+10;
+ $('pollTime').textContent='第 '+request+' 次查询 · 发起 '+stamp(Date.now());
+ const primary=sampleNode(index,full,request,started);
+ // A slow full read can still update reserves after a faster gate-only reply.
+ let backup=null;
+ function checkBackup(){
+  if(backup||document.hidden||request<lastApplied||(gateFresh()&&gate.enabled))return;
+  const other=nextIdleNode((index+1)%nodes.length);
+  if(other>=0&&other!==index)backup=sampleNode(other,false,request,started);
+ }
+ const timer=setTimeout(checkBackup,650);
+ paint();
+ try{if(!await primary)checkBackup()}finally{clearTimeout(timer)}
+ if(backup)await backup;
+}
+$('arm').onclick=async()=>{
+ if(armed){armed=false;alarmPlayed=false;notificationSent=false;stopTone();$('arm').textContent='开启声音';$('alertNote').textContent='声音与系统通知已关闭，页面继续监控。';return}
+ armed=true;$('arm').textContent='关闭声音';
+ try{audio??=new (window.AudioContext||window.webkitAudioContext)();await audio.resume();if(armed){if(gateFresh()&&gate.enabled)alertOpen();else ping()}}catch{}
+ let permission='';try{if('Notification' in window)permission=await Notification.requestPermission()}catch{}
+ if(!armed)return;
+ $('alertNote').textContent=(audio?.state==='running'?'声音已启用。':'声音不可用。')+(permission==='granted'?'系统通知已启用。':'系统通知未启用。')+' 请保持页面打开。';
+ if(gateFresh()&&gate.enabled)alertOpen();
+};
+function paintOrder(){
+ const buyPrice=gasPrice('buy'),buyLimit=buyGasLimit();
+ $('maxBuyFee').textContent=buyPrice&&buyLimit?fmt(buyPrice*buyLimit,12)+' POL':'—';
+ $('buyTip').textContent=!fresh()||!buyPrice?'—':buyPrice<snap.baseFee?'单价低于基础费':showGwei(buyPrice-snap.baseFee)+' Gwei';
+ const input=decimal($('amount').value.trim(),18);
+ const bps=decimal($('slip').value.trim(),2);
+ const q=requestQuote(input,bps,fresh()?snap:null);
+ $('slipError').textContent=validSlippage(bps)?'':'滑点可填 5%–99.99%，最多两位小数。';
+ $('slip').setAttribute('aria-invalid',String(!validSlippage(bps)));
+ for(const button of presets)button.setAttribute('aria-pressed',String(bps===BigInt(button.dataset.slip)*100n));
+ currentQuote=q;
+ $('estimate').textContent=q?fmt(q.out)+' 熬鹰':'—';$('minimum').textContent=q?fmt(q.min)+' 熬鹰':'—';
+ $('account').textContent=account?account.slice(0,6)+'…'+account.slice(-4):'钱包未连接';
+ $('connect').hidden=Boolean(account||pending||busy);
+ $('action').hidden=!account&&!pending&&!busy;
+ $('balance').textContent=funds?fmt(funds.balance):'—';$('allowance').textContent=funds?fmt(funds.allowance):'—';
+ const gateOpen=Boolean(gateFresh()&&gate.enabled);
+ for(const button of [$('action'),$('connect')])button.dataset.gate=gateOpen?'open':'';
+ let label='请先连接钱包',mode='';
+ if(busy)label='请在钱包中确认';
+ else if(pending)label='等待链上确认';
+ else if(account){
+ if(!fresh())label=gateOpen?'等待储备和费用更新':'等待链上数据';
+ else if(!input)label='请输入有效的 DAI 金额';
+ else if(!funds)label='等待读取钱包';
+ else if(funds.allowance<input){mode='approve';label='授权 '+fmt(input,18)+' DAI'}
+ else if(funds.balance<input)label='已授权，DAI 余额不足';
+ else if(gateOpen&&(!snap.r0||!snap.r1))label='等待池内流动性';
+ else if(!q)label='等候有效报价，请核对滑点';
+ else if(!buyLimit)label='请检查买入 Gas Limit';
+ else if(!openSignal())label='已准备，等待跟单';
+ else if(!funds.exempt&&snap.maxTx&&q.out>snap.maxTx)label='超过单笔上限';
+ else if(!funds.exempt&&snap.maxWallet&&funds.token+q.out>snap.maxWallet)label='超过持仓上限';
+ else {mode='buy';label='立即买入 · '+fmt(input,18)+' DAI'}
+ }
+ if(mode&&!gasPrice(mode)){mode='';label='请输入有效 Gas Price'}
+ if(mode==='buy'&&buyPrice<snap.baseFee){mode='';label='买入单价低于基础费'}
+ $('simulate').disabled=testing||!q||!account||!funds||funds.balance<q.input||funds.allowance<q.input;
+ if(gateOpen&&mode!=='buy'&&!busy&&!pending)label='开关已开 · '+label;
+ if($('action').textContent!==label)$('action').textContent=label;
+ $('action').disabled=!mode;$('action').dataset.mode=mode;
+}
+const wallet=(method,params=[])=>provider.request({method,params});
+async function readFunds(){
+ const version=epoch;if(!account)return;
+ try{const balance='0x70a08231'+word(account);
+ const reads=[[DAI,balance],[DAI,'0xdd62ed3e'+word(account)+word(ROUTER)],[TOKEN,balance],[TOKEN,'0x3f4218e0'+word(account)]];
+ const data=await Promise.all(reads.map(([to,data])=>wallet('eth_call',[{to,data},'latest'])));
+ if(version===epoch)funds={balance:unpack(data[0],1)[0],allowance:unpack(data[1],1)[0],token:unpack(data[2],1)[0],exempt:unpack(data[3],1)[0]===1n};
+ }catch{if(version===epoch)funds=null}paintOrder();
+}
+function clearWallet(){resetSimulation();epoch++;account='';funds=null;paintOrder()}
+const polygonChain='0x89';
+let announcedOKX=null,connecting=false,autoAttempted=false;
+const isOKX=p=>p?.isOkxWallet||p?.isOKExWallet;
+function findOKX(){
+ const injected=window.ethereum;
+ return [window.okxwallet,window.okxwallet?.ethereum,announcedOKX,
+  ...(Array.isArray(injected?.providers)?injected.providers.filter(isOKX):[]),
+  isOKX(injected)?injected:null].find(p=>typeof p?.request==='function');
+}
+async function syncWallet(){
+ const version=epoch;
+ const [chain,accounts]=await Promise.all([wallet('eth_chainId'),wallet('eth_accounts')]);
+ if(version!==epoch){if(connecting)await syncWallet();return}
+ if(BigInt(chain)!==137n)throw Error('请在欧意钱包切换至 Polygon 主网（137）。');
+ const selected=accounts?.[0];
+ if(!selected)return;
+ if(!/^0x[0-9a-f]{40}$/i.test(selected))throw Error('未取得有效钱包地址。');
+ useGasAccount(selected);epoch++;account=selected;funds=null;
+ $('feedback').textContent='';paintOrder();void readFunds();
+}
+function walletChanged(){
+ clearWallet();
+ if(!connecting)syncWallet().catch(e=>{$('feedback').textContent=e.message||'请重新连接钱包。'});
+}
+async function connectWallet(interactive){
+ if(connecting||account)return;
+ const found=provider||findOKX();
+ if(!found){
+  if(interactive)$('feedback').textContent='请在欧意钱包的内置浏览器打开，或启用欧意钱包扩展。';
+  return;
+ }
+ if(!interactive&&autoAttempted)return;
+ autoAttempted=true;connecting=true;$('connect').disabled=true;
+ try{
+  if(!provider){
+   provider=found;
+   provider.on?.('chainChanged',walletChanged);provider.on?.('accountsChanged',walletChanged);
+   provider.on?.('disconnect',clearWallet);
+  }
+  if(interactive)await wallet('eth_requestAccounts');
+  if(BigInt(await wallet('eth_chainId'))!==137n)
+   await wallet('wallet_switchEthereumChain',[{chainId:polygonChain}]);
+  await syncWallet();
+  if(interactive&&!account)throw Error('请在欧意钱包解锁并选择连接地址。');
+ }catch(e){
+  $('feedback').textContent=Number(e.code)===4001?'已取消请求，可点「连接钱包」重试。':e.message||'请点「连接钱包」重试。';
+ }finally{connecting=false;$('connect').disabled=false}
+}
+function discoverOKX(){void connectWallet(false)}
+window.addEventListener('eip6963:announceProvider',e=>{
+ const detail=e.detail;
+ if(isOKX(detail?.provider)||['com.okex.wallet','com.okx.wallet','com.okx.web3'].includes(detail?.info?.rdns)){
+  announcedOKX=detail.provider;discoverOKX();
+ }
+});
+window.addEventListener('ethereum#initialized',discoverOKX);
+window.addEventListener('load',discoverOKX);
+$('connect').onclick=()=>connectWallet(true);
+function showTx(hash){
+ const a=document.createElement('a');a.href='https://polygonscan.com/tx/'+hash;a.target='_blank';a.rel='noopener';a.textContent='查看交易 '+hash.slice(0,10)+'…';$('receipt').replaceChildren(a);
+}
+function setPending(hash,price=null){
+ pendingPrice=price;
+ try{if(price)sessionStorage.setItem('dlgns.price',price.toString());else sessionStorage.removeItem('dlgns.price')}catch{}
+ pending=hash;try{if(hash)sessionStorage.setItem('dlgns.pending',hash);else sessionStorage.removeItem('dlgns.pending')}catch{}
+}
+let checking=false;
+async function checkTx(){
+ if(!pending||checking)return;checking=true;
+ try{const [r]=await batch(nodes[nodeIndex],[['eth_getTransactionReceipt',[pending]]]);if(!r)return;
+ const expected=pendingPrice,actual=r.effectiveGasPrice==null?null:BigInt(r.effectiveGasPrice);
+ const fee=actual===null?'请在区块浏览器核对单价。':'实际单价 '+showGwei(actual)+' Gwei，使用 '+BigInt(r.gasUsed).toLocaleString('en-US')+' Gas，支付 '+fmt(actual*BigInt(r.gasUsed),12)+' POL。';
+ setPending(null);$('feedback').textContent=(BigInt(r.status)===1n?'交易已上链。':'交易已回退。')+fee+(expected&&actual!==null&&expected!==actual?'与页面请求的 '+showGwei(expected)+' Gwei 不同。':'');funds=null;await readFunds();
+ }catch{}finally{checking=false;paintOrder()}
+}
+$('action').onclick=async()=>{
+ const mode=$('action').dataset.mode,q=currentQuote,from=account,version=epoch;
+ const input=decimal($('amount').value.trim(),18);
+ if(!mode||!input||(mode==='buy'&&!q)||busy||pending||!fresh())return;
+ let price=gasPrice(mode);
+ if(!price)return;
+ busy=true;paintOrder();
+ try{
+ let tx,limit;
+ if(mode==='buy'){
+  limit=buyGasLimit();
+  if(!limit)throw Error('请检查买入 Gas Limit。');
+  if(!(openSignal()&&from&&q.input===input))throw Error('请核对钱包、报价与跟单信号。');
+  if(price<snap.baseFee)throw Error('设置单价低于区块基础费。');
+  tx={from,to:ROUTER,data:swapData(q,from,Math.floor(Date.now()/1000)+120)};
+ }else{
+  $('feedback').textContent='正在估算授权 Gas…';
+  const [chain,accts]=await Promise.all([wallet('eth_chainId'),wallet('eth_accounts')]);
+  if(BigInt(chain)!==137n||accts[0]?.toLowerCase()!==from.toLowerCase()||version!==epoch)throw Error('钱包已变更，请重新连接。');
+  tx={from,to:DAI,data:'0x095ea7b3'+word(ROUTER)+word(input)};
+  const estimate=BigInt(await wallet('eth_estimateGas',[{...tx,type:'0x0',chainId:'0x89',gasPrice:hex(price)}]));
+  if(estimate<=0n)throw Error('钱包返回无效 Gas 估算。');
+  const padded=(estimate*3n+1n)/2n;
+  limit=padded>100000n?padded:100000n;
+  if(BigInt(await wallet('eth_chainId'))!==137n||version!==epoch)throw Error('钱包已变更，请重新确认。');
+  price=gasPrice('approve');
+  if(!price)throw Error('等待最新区块基础费。');
+ }
+ Object.assign(tx,{type:'0x0',chainId:'0x89',gas:hex(limit),gasPrice:hex(price)});
+ $('feedback').textContent='请求 '+showGwei(price)+' Gwei，Gas Limit '+limit.toLocaleString('en-US')+'，最高 '+fmt(price*limit,12)+' POL。请核对钱包签名页。';
+ const hash=await wallet('eth_sendTransaction',[tx]);if(!/^0x[0-9a-f]{64}$/i.test(hash))throw Error('钱包未返回有效交易哈希，请核对钱包记录。');
+ setPending(hash,price);showTx(hash);$('feedback').textContent='已请求 '+showGwei(price)+' Gwei，等待回执核实实际单价。';record(mode==='approve'?'DAI 授权已提交':'买入交易已提交');
+ }catch(e){$('feedback').textContent=e.code===4001?'已取消钱包确认。':('钱包或交易模拟提示：'+(e.shortMessage||e.message||'交易未完成'))}
+ finally{busy=false;paintOrder()}
+};
+let simulationVersion=0;
+function resetSimulation(){
+ simulationVersion++;
+ $('simulation').textContent='模拟需有足够 DAI 余额及授权。结果仅对应测试区块和金额。';
+}
+$('simulate').onclick=async()=>{
+ const q=currentQuote,s=snap,who=account,version=++simulationVersion;
+ if(testing||!q||!who||!fresh())return;
+ testing=true;paintOrder();$('simulation').textContent='正在连续模拟买入、授权和卖出…';
+ try{
+ const deadline=Math.floor(s.ts/1000)+600;
+ const swap=(quote,path)=>({from:who,to:ROUTER,data:swapData(quote,who,deadline,path)});
+ const balance={from:who,to:DAI,data:'0x70a08231'+word(who)};
+ const calls=[swap(q,[DAI,TOKEN]),balance,{from:who,to:TOKEN,data:'0x095ea7b3'+word(ROUTER)+word(q.out)},
+ swap({input:q.out,min:1n},[TOKEN,DAI]),balance];
+ const simulationNode=nodes[nodeIndex]===tenderlyMonitor?nodes[0]:nodes[nodeIndex];
+ const [blocks]=await batch(simulationNode,[['eth_simulateV1',[{blockStateCalls:[{calls}]},hex(BigInt(s.height))]]]);
+ if(version!==simulationVersion)return;
+ const results=blocks?.[0]?.calls;
+ if(!Array.isArray(results)||results.length!==calls.length)throw Error('节点返回的模拟不完整');
+ const names=['买入','查询 DAI','授权 熬鹰','卖出','查询卖后余额'];
+ for(let i=0;i<results.length;i++)if(results[i].status!=='0x1')throw Error(names[i]+'模拟失败，'+(results[i].error?.message||'调用回退'));
+ const received=unpack(results[4].returnData,1)[0]-unpack(results[1].returnData,1)[0];
+ if(received<=0n)throw Error('模拟卖出未收到 DAI');
+ $('simulation').textContent='区块 '+s.height.toLocaleString('en-US')+' 模拟通过：买入使用 '+fmt(q.input)+' DAI，卖回 '+fmt(q.out)+' 熬鹰 收到 '+fmt(received)+' DAI。实际成交取决于打包状态。';
+ }catch(e){if(version===simulationVersion)$('simulation').textContent='未验证可卖：'+(e.message||'节点不可用')}
+ finally{testing=false;paintOrder()}
+};
+const presets=document.querySelectorAll('button[data-slip]');
+for(const button of presets)button.onclick=()=>{
+ $('slip').value=button.dataset.slip;
+ resetSimulation();paintOrder();
+};
+for(const id of ['amount','slip','buyPrice','buyLimit'])$(id).addEventListener('input',()=>{resetSimulation();paintOrder()});
+try{const hash=sessionStorage.getItem('dlgns.pending');if(/^0x[0-9a-f]{64}$/i.test(hash||'')){pending=hash;const saved=sessionStorage.getItem('dlgns.price');if(saved&&/^\d+$/.test(saved))pendingPrice=BigInt(saved);showTx(hash)}}catch{}
+randomizeBuyGas();
+let pollTimer=setInterval(poll,1000);setInterval(checkTx,2500);setInterval(readFunds,7000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){clearInterval(pollTimer);pollTimer=setInterval(poll,1000);poll(!detailsFresh());checkTx();readFunds()}});
+poll();paintOrder();
+window.dispatchEvent(new Event('eip6963:requestProvider'));
+discoverOKX();
+if(!provider)setTimeout(discoverOKX,1000);
+</script></body></html>
